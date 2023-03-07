@@ -3,18 +3,39 @@ const bcrypt = require("bcrypt")
 const jwt = require("jsonwebtoken")
 require("dotenv").config()
 const {decryptToken}=require("../util/emailotp")
-const {courseModel} = require("../models/Dashboard.model");
-const {formModel} = require("../models/Dashboard.model");
-const {userModel} = require("../models/User.model")
+const {CourseModel} = require("../models/Dashboard.model");
+const {FormModel} = require("../models/Dashboard.model");
+const {MediumsModel} = require("../models/Dashboard.model");
+const {UserModel} = require("../models/User.model")
 
 const dashboardController = Router();
 
 //  <----------------------Fetching Course -static data--------------------------------------------------> //
 
-dashboardController.get("/course-details", async (req, res) => {
-    const courses = await courseModel.find({})
-    console.log(courses[0]._id)
-    return res.status(200).send(courses)
+dashboardController.get("/dashboard-details", async (req, res) => {
+
+    if(!req.headers.authorization){
+        return res.send("Please login again")
+    }
+    const token = req.headers.authorization.split(" ")[1]
+    const courses = await CourseModel.find({})
+    const userToken=decryptToken(token);
+
+    const email= userToken.email || "email"
+    const mobNumb=userToken.mobile || "mob";
+
+    const mediums = await MediumsModel.find({});
+
+    const user = await UserModel.find({ $or: [{ email:email }, { mob: mobNumb }] });
+
+    if(!user){
+        return res.status(404).send("User doesn't exists.")
+    }
+    const userId =((user[0]._id))
+    const userDetails=await FormModel.find({userId:userId});
+
+    return res.status(200).json({msg : "Form submitted successfully",courses:courses, userFormDetails:userDetails, updateMediums:mediums[0]})
+   
 });
 
  //  <----------------------Course creation- static data--------------------------------------------------> //
@@ -32,7 +53,7 @@ dashboardController.post("/create-course", async (req, res) => {
         cutoffMettlTest,
         cutoffCommunicationSkills } = req.body;
 
-    const course = new courseModel({
+    const course = new CourseModel({
         courseType ,
         courseName ,
         courseStartDate ,
@@ -47,10 +68,10 @@ dashboardController.post("/create-course", async (req, res) => {
     })
     try{
         await course.save()
-        res.send("course created")
+        res.status(200).send("course created")
     }
     catch(err){
-        res.send("something went wrong while creating course", err)
+        res.status(400).send("something went wrong while creating course", err)
     }
 });
 
@@ -59,48 +80,125 @@ dashboardController.post("/create-course", async (req, res) => {
 
 dashboardController.post("/user-data-collection", async (req, res) => {
     const { mob ,
+        fullName,
+        emailId,
+        gender,
+        workingStatus,
+        receiveUpdates,
         dateOfBirth ,
         twelthDiplomaCompletion ,
         courseStartDate ,
         yearOfGraduation ,
         referralCode ,
-        readyToWork ,
-        distanceLearning,token, courseId} = req.body;
+        readyToWork } = req.body;
+
+        if(!req.headers.authorization){
+            return res.send("Please login again")
+        }
+        const token = req.headers.authorization.split(" ")[1]
 
         const userToken=decryptToken(token);
 
         const email= userToken.email || "email"
         const mobNumb=userToken.mobile || "mob"
 
-        const user = await userModel.find({ $or: [{ email:email }, { mob: mobNumb }] });
+        const user = await UserModel.find({ $or: [{ email:email }, { mob: mobNumb }] });
+        if(!user){
+            return res.status(404).send("User doesn't exists.")
+        }
 
         const userId =((user[0]._id))
-
-        if (user) {await userModel.findOneAndUpdate({ _id: userId },{ $push: { coursesApplied: {courseId:courseId} } });
-        }else{
-            res.send("User not found while storing user form data collection")
-        }
         
-        const userForm = new formModel({
-        userId,
-        courseId,
-        mob ,
-        dateOfBirth ,
-        twelthDiplomaCompletion ,
-        courseStartDate ,
-        yearOfGraduation ,
-        referralCode ,
-        readyToWork ,
-        distanceLearning 
+        const userform = new FormModel({
+            mob ,
+            userId,
+            fullName,
+            emailId,
+            gender,
+            workingStatus,
+            receiveUpdates,
+            dateOfBirth ,
+            twelthDiplomaCompletion ,
+            courseStartDate ,
+            yearOfGraduation ,
+            referralCode ,
+            readyToWork 
          })
     try{
-        await userForm.save()
-        res.send("User-form created")
+        await userform.save()
+        res.status(200).send("User-form created")
     }
     catch(err){
-        res.send("something went wrong while creating course", err)
+        console.log(err)
+        res.status(400).send("something went wrong while creating course")
     }
 })
+
+dashboardController.post("/user-applied", async (req, res) => {
+    const { courseId, congAbilityScore, MetTestScore, communicationScore, credibilityScore, status } = req.body;
+    
+        if(!req.headers.authorization){
+            return res.send("Please login again")
+        }
+        const token = req.headers.authorization.split(" ")[1]
+        const userToken=decryptToken(token);
+
+        const email= userToken.email || "email"
+        const mobNumb=userToken.mobile || "mob"
+
+        const user = await UserModel.find({ $or: [{ email:email }, { mob: mobNumb }] });
+        
+        if(!user){
+            return res.status(404).send("User doesn't exists.")
+        }
+        const userId =((user[0]._id))
+
+        await UserModel.findOneAndUpdate({ _id: userId },{ $push: { coursesApplied: {courseId:courseId,congAbilityScore:congAbilityScore, MetTestScore:MetTestScore, communicationScore:communicationScore, credibilityScore:credibilityScore, status:status} } });
+
+        await FormModel.findOneAndUpdate({ userId: userId },{ $push: { coursesApplied: {courseId:courseId,congAbilityScore:congAbilityScore, MetTestScore:MetTestScore, communicationScore:communicationScore, credibilityScore:credibilityScore, status:status} } });
+
+        let message = "";
+        let reqStatus = 200;
+
+        if (userId && status=="pass") {
+            reqStatus = 200;
+            message = "Applied courses and course eligible is submitted to database";
+
+            await UserModel.findOneAndUpdate({ _id: userId },{ $push: { coursesPassed: {courseId} } });
+            await FormModel.findOneAndUpdate({ userId: userId },{ $push: { coursesFailed: {courseId} } });
+            res.status(200).json({msg:"Applied courses and course eligible is submitted to database"})
+        }
+        else if(userId && status=="fail"){
+            message = "Applied courses and courses not eligible is submitted to database";
+            reqStatus = 200;
+
+            await UserModel.findOneAndUpdate({ _id: userId },{ $push: { coursesPassed: {courseId} } });
+            await FormModel.findOneAndUpdate({ userId: userId },{ $push: { coursesFailed: {courseId} } });
+            res.status(200).json({msg:"Applied courses and courses not eligible is submitted to database"})
+        }
+        else{
+            message = "User not found while storing user form data collection";
+            reqStatus = 404;
+        }
+        res.status(reqStatus).send(message)
+})
+
+// --------------------------- creating db for user updates availibility ----------------------->
+
+dashboardController.post("/notification-medium", async (req, res) => {
+    const {med1, med2, med3, med4 } = req.body;
+
+    const medium = new MediumsModel({
+        med1, med2, med3, med4
+    })
+    try{
+        await medium.save()
+        res.status(200).send("mediums created")
+    }
+    catch(err){
+        res.status(400).send("something went wrong while creating update mediums", err)
+    }
+});
 
 module.exports = {
     dashboardController

@@ -2,16 +2,20 @@ const { Router } = require("express");
 const authController = Router();
 const mongoose = require("mongoose");
 const bcrypt = require("bcrypt");
-const { userModel } = require("../models/User.model");
+const { UserModel } = require("../models/User.model");
 const {
-  mailOtp,
+  sendMailOtp,
   generateToken,
-  validateEmail
+ validateEmail,
 } = require("../util/emailotp");
-const otpModel = require("../models/Otp.model");
+const OtpModel = require("../models/Otp.model");
 const customEmailMessage = "sign in with masai portal.";
 const customEmailMessage2 = "reset your old password";
 const rateLimit = require("express-rate-limit");
+
+
+
+// <----------------------  Function to limit the 10 requests per 60 minutes   -------------->
 
 const apiLimiter = rateLimit({
   windowMs: 360 * 60 * 1000, //1 hour
@@ -23,15 +27,18 @@ const apiLimiter = rateLimit({
 
 authController.use("/signin", apiLimiter);
 
-// APT for sign in
+//<-------------------------------   APT for sign in   ------------------------------->
+
 authController.post("/signin", async (req, res) => {
-  const { email, password } = req.body;
-  const emailValidation = validateEmail(email);
-  if (emailValidation) {
-    const user = await userModel.findOne({ email });
+  const { email, password, mobile } = req.body;
+  if(email)
+  {
+    const validEmail = validateEmail(email);
+  if (validEmail) {
+    const user = await UserModel.findOne({ email });
     if (user && password) {
       const hash = user.password;
-      if (user && password) {
+      if (user && hash) {
         const verification = await bcrypt.compare(password, hash);
         if (verification) {
           res.send(
@@ -44,8 +51,12 @@ authController.post("/signin", async (req, res) => {
         } else if (user && !verification)
           res.status(401).send({ msg: "Please enter a valid password." });
       }
+    } else if (user && !user.password) {
+      res.status(200).send({
+        msg: "Password is not associated with your email address, Please try with OTP.",
+      });
     } else if (user) {
-      mailOtp(email, customEmailMessage, user?.fullName);
+      sendMailOtp(email, customEmailMessage, user?.fullName);
       res.status(200).send({
         msg: "OTP sent successfully, Please check your email for OTP.",
       });
@@ -54,19 +65,45 @@ authController.post("/signin", async (req, res) => {
         msg: "The account you mentioned does not exist. Please try with correct email address.",
       });
   } else res.status(401).send({ msg: "Please enter a valid email address." });
+}
+else if(mobile)
+{
+  if(mobile.length!=10 || mobile[0]==0)
+  res.status(401).send({msg:"Please Enter 10 digit valid mobile number"});
+  else{
+    const userDetails=await UserModel.findOne({mob:mobile});
+    if(userDetails && password && !userDetails.password)
+    {
+      res.status(200).send({
+        msg: "Password is not associated with your mobile number, Please try with OTP.",
+      });
+    }
+    else if(!userDetails)
+    {
+      res.status(401).send({msg:"There is no account associated with this mobile number"})
+      
+    }
+    else
+    res.status(200).send(generateToken({
+      email: userDetails.email,
+      fullName: userDetails.fullName,
+      mobile: userDetails.mob,
+    }),{msg:"Signed in Successfully"});
+  }
+}
 });
 
-// API to verify otp sent on email
+//<--------------------    API to verify otp sent on email ----------------------->
 authController.post("/verifyotp", async (req, res) => {
   const { email, otp } = req.body;
-  const user = await otpModel.findOne({ email });
+  const user = await OtpModel.findOne({ email });
   if (user && user.otp == otp) {
-    const userDetails = await userModel.findOne({ email });
+    const userDetails = await UserModel.findOne({ email });
     if (userDetails)
       res.send(
         generateToken({
           email: userDetails.email,
-          full_name: userDetails.full_name,
+          fullName: userDetails.fullName,
           mobile: userDetails.mobile,
         })
       );
@@ -75,13 +112,12 @@ authController.post("/verifyotp", async (req, res) => {
 
 authController.post("/forget", async (req, res) => {
   let { email } = req.body;
-  const user = await userModel.findOne({ email });
+  const user = await UserModel.findOne({ email });
   if (user) {
     try {
-      sendmail(email, customEmailMessage2, user?.fullName);
+      sendMailOtp(email, customEmailMessage2, user?.fullName);
       res.status(200).send({ msg: "your otp for reset password is sended" });
     } catch (err) {
-      console.log(err);
       res.status(401).send("something went wrong! try again");
     }
   } else {
@@ -91,14 +127,14 @@ authController.post("/forget", async (req, res) => {
 
 authController.post("/reset", async (req, res) => {
   let { otp, password } = req.body;
-  let isValidOtp = await otpModel.findOne({ otp });
+  let isValidOtp = await OtpModel.findOne({ otp });
   if (isValidOtp) {
     let { email } = isValidOtp;
     bcrypt.hash(password, 5, async function (err, hash) {
       if (err) {
         res.status(400).send({ msg: "something went wrong! try again" });
       } else {
-        let isUpdate = await userModel.findOneAndUpdate(
+        let isUpdate = await UserModel.findOneAndUpdate(
           { email },
           { password: hash }
         );
@@ -112,4 +148,4 @@ authController.post("/reset", async (req, res) => {
   }
 });
 
-module.exports = { authController };
+module.exports = authController;

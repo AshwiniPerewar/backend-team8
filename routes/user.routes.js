@@ -1,11 +1,11 @@
 const {Router} = require("express")
-const {userModel} = require("../models/User.model")
+const {UserModel} = require("../models/User.model")
 const userController = Router();
 const bcrypt = require("bcrypt")
 const jwt = require("jsonwebtoken");
-const otpModel = require("../models/Otp.model");
+const OTPModel = require("../models/Otp.model");
 require("dotenv").config();
-const {validateEmail,generateToken, validateUserName, mailOtp, decryptToken }= require("../util/emailotp")
+const {validateEmail,generateToken, validateUserName, sendMailOtp, decryptToken }= require("../util/emailotp")
 const customEmailMessage = "sign in with masai portal.";
 
 
@@ -19,8 +19,8 @@ userController.post("/verify", async(req,res)=>{
   //  <----------------------If user is signed up with email id --------------------------------------------------> //
     if (email && !password)
     {
-        const alreadyUser = await userModel.find({ email });
-        const valideMail= emailvalidation(email);
+        const alreadyUser = await UserModel.find({ email });
+        const valideMail= validateEmail(email);
         const validName= validateUserName(fullName)
 
         if(valideMail==false){
@@ -33,7 +33,7 @@ userController.post("/verify", async(req,res)=>{
             return res.status(403).send("User already exists");
         }
         else{
-           await sendmail(email, customEmailMessage, fullName)
+           await sendMailOtp(email, customEmailMessage, fullName)
            return res.status(200).send("Otp sent to your email address")   
         }
     }
@@ -42,7 +42,7 @@ userController.post("/verify", async(req,res)=>{
 
      if(mob && !password){
 
-      const alreadyUser = await userModel.find({ mob});
+      const alreadyUser = await UserModel.find({ mob});
       const validName= validateUserName(fullName)
 
       if (alreadyUser.length>0){
@@ -64,7 +64,7 @@ userController.post("/verify", async(req,res)=>{
 
     if(password && email){
 
-      const alreadyUser = await userModel.find({ email });
+      const alreadyUser = await UserModel.find({ email });
        const valideMail= validateEmail(email);
        const validName= validateUserName(fullName)
 
@@ -85,7 +85,7 @@ userController.post("/verify", async(req,res)=>{
            if(err){
                res.send("Something went wrong, plz try again later")
            }
-           const user = new userModel({
+           const user = new UserModel({
                email,
                password : hash,
                fullName
@@ -97,12 +97,12 @@ userController.post("/verify", async(req,res)=>{
                 fullname: user.fullName,
                 mobile: user.mob,
               })
-              decryptToken(token.primaryToken)
-               res.json({msg : "Signup successfull at email password",token, email:email, mobNumb:mob, userName:fullName})
+              decryptToken(token.Primarytoken)
+               res.status(200).json({msg : "Signup successful at email password",token, email:email, mobNumb:mob, userName:fullName})
            }
            catch(err){
                console.log(err)
-               res.send("Something went wrong, plz try again")
+               res.status(400).send("Something went wrong, plz try again")
            }
           
        }); 
@@ -111,7 +111,7 @@ userController.post("/verify", async(req,res)=>{
 
 //  <----------------------If user is signed up  with full name , mobile number and password--------------------------------------------------> //
    if(password && mob){
-    const alreadyUser = await userModel.find({ mob});
+    const alreadyUser = await UserModel.find({ mob});
 
     if (alreadyUser.length>0){
       return res.status(403).send("User already exists");
@@ -127,9 +127,9 @@ userController.post("/verify", async(req,res)=>{
       bcrypt.hash(password, 5, async function(err, hash) {
         if(err){
           console.log(err)
-            res.send("Something went wrong, plz try again later")
+            res.status(400).send("Something went wrong, plz try again later")
         }
-        const user = new userModel({
+        const user = new UserModel({
             mob,
             password : hash,
             fullName
@@ -141,12 +141,12 @@ userController.post("/verify", async(req,res)=>{
               fullname: user.fullName,
               mobile: user.mob,
             })
-            decryptToken(token.primaryToken)
-            res.json({msg : "Signup successfull at email password",token, email:email, mobNumb:mob, userName:fullName})
+            decryptToken(token.Primarytoken)
+            res.status(200).json({msg : "Signup successful at email password",token, email:email, mobNumb:mob, userName:fullName})
         }
         catch(err){
             console.log(err)
-            res.send("Something went wrong, plz try again")
+            res.status(400).send("Something went wrong, plz try again")
         }
        
     }); 
@@ -163,11 +163,11 @@ userController.post("/signup", async(req, res) => {
       //  <----------------------If user is signed up with email address--------------------------------------------------> //
   
     if(email && !password){
-      const userExists = awaitotpModel.findOne({ email });
+      const userExists = await OTPModel.findOne({ email });
 
       if(userExists && userExists.otp==otp){
         
-        const user = new userModel({
+        const user = new UserModel({
           email,
           fullName
       })
@@ -177,7 +177,7 @@ userController.post("/signup", async(req, res) => {
         fullname: user.fullName,
         mobile: user.mob,
       })
-      res.json({msg : "Signup successfull ",token, email:email, mobNumb:mob, userName:fullName})
+      res.status(200).json({msg : "Signup successful ",token, email:email, mobNumb:mob, userName:fullName})
       } else res.status(401).send({ msg: "Please enter a valid 6 digit OTP." });
      
   
@@ -188,7 +188,7 @@ userController.post("/signup", async(req, res) => {
   if (mob && !password){
     
    {
-    const user = new userModel({
+    const user = new UserModel({
       fullName,
       mob
   })
@@ -199,11 +199,13 @@ userController.post("/signup", async(req, res) => {
     fullname: user.fullName,
     mobile: user.mob,
   });
-  res.json({msg : "Signup successfull ",token, email:email, mobNumb:mob, userName:fullName})
+  res.status(200).json({msg : "Signup successful ",token, email:email, mobNumb:mob, userName:fullName})
    }
   }
          
 })
+
+
 
 module.exports = {
     userController
