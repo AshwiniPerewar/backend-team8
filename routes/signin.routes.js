@@ -6,14 +6,12 @@ const { UserModel } = require("../models/User.model");
 const {
   sendMailOtp,
   generateToken,
- validateEmail,
+  validateEmail,
 } = require("../util/emailotp");
 const OtpModel = require("../models/Otp.model");
 const customEmailMessage = "sign in with masai portal.";
 const customEmailMessage2 = "reset your old password";
 const rateLimit = require("express-rate-limit");
-
-
 
 // <----------------------  Function to limit the 10 requests per 60 minutes   -------------->
 
@@ -31,66 +29,68 @@ authController.use("/signin", apiLimiter);
 
 authController.post("/signin", async (req, res) => {
   const { email, password, mobile } = req.body;
-  if(email)
-  {
+  if (email) {
     const validEmail = validateEmail(email);
-  if (validEmail) {
-    const user = await UserModel.findOne({ email });
-    if (user && password) {
-      const hash = user.password;
-      if (user && hash) {
-        const verification = await bcrypt.compare(password, hash);
-        if (verification) {
-          res.send(
-            generateToken({
-              email: user.email,
-              fullName: user.fullName,
-              mobile: user.mobile,
-            })
-          );
-        } else if (user && !verification)
-          res.status(401).send({ msg: "Please enter a valid password." });
-      }
-    } else if (user && !user.password) {
-      res.status(200).send({
-        msg: "Password is not associated with your email address, Please try with OTP.",
-      });
-    } else if (user) {
-      sendMailOtp(email, customEmailMessage, user?.fullName);
-      res.status(200).send({
-        msg: "OTP sent successfully, Please check your email for OTP.",
-      });
-    } else
-      res.status(401).send({
-        msg: "The account you mentioned does not exist. Please try with correct email address.",
-      });
-  } else res.status(401).send({ msg: "Please enter a valid email address." });
-}
-else if(mobile)
-{
-  if(mobile.length!=10 || mobile[0]==0)
-  res.status(401).send({msg:"Please Enter 10 digit valid mobile number"});
-  else{
-    const userDetails=await UserModel.findOne({mob:mobile});
-    if(userDetails && password && !userDetails.password)
-    {
-      res.status(200).send({
-        msg: "Password is not associated with your mobile number, Please try with OTP.",
-      });
+    if (validEmail) {
+      const userDetails = await UserModel.findOne({ email });
+      if (userDetails && password) {
+        const hash = userDetails.password;
+        if (userDetails && hash) {
+          const verification = await bcrypt.compare(password, hash);
+          if (verification) {
+            res.status(200).send({
+              msg: "Signed in successfully",
+              token: generateToken({
+                email: userDetails.email,
+                fullName: userDetails.fullName,
+                mobile: userDetails.mob,
+              }),
+            });
+          } else if (userDetails && !verification)
+            res.status(401).send({ msg: "Please enter a valid password." });
+        }
+      } else if (userDetails && !userDetails.password) {
+        res.status(200).send({
+          msg: "Password is not associated with your email address, Please try with OTP.",
+        });
+      } else if (userDetails) {
+        sendMailOtp(email, customEmailMessage, userDetails?.fullName);
+        res.status(200).send({
+          msg: "OTP sent successfully, Please check your email for OTP.",
+        });
+      } else
+        res.status(401).send({
+          msg: "The account you mentioned does not exist. Please try with correct email address.",
+        });
+    } else res.status(401).send({ msg: "Please enter a valid email address." });
+  } else if (mobile) {
+    if (mobile.length != 10 || mobile[0] == 0)
+      res
+        .status(401)
+        .send({ msg: "Please Enter 10 digit valid mobile number" });
+    else {
+      const userDetails = await UserModel.findOne({ mob: mobile });
+      if (userDetails && password && !userDetails.password) {
+        res.status(401).send({
+          msg: "Password is not associated with your mobile number, Please try with OTP.",
+        });
+      } else if (!userDetails) {
+        res
+          .status(401)
+          .send({
+            msg: "There is no account associated with this mobile number",
+          });
+      } else
+        res.status(200).send({
+          msg: "Signed in successfully",
+          token: generateToken({
+            email: userDetails.email,
+            fullName: userDetails.fullName,
+            mobile: userDetails.mob,
+          }),
+        });
     }
-    else if(!userDetails)
-    {
-      res.status(401).send({msg:"There is no account associated with this mobile number"})
-      
-    }
-    else
-    res.status(200).send(generateToken({
-      email: userDetails.email,
-      fullName: userDetails.fullName,
-      mobile: userDetails.mob,
-    }),{msg:"Signed in Successfully"});
   }
-}
 });
 
 //<--------------------    API to verify otp sent on email ----------------------->
@@ -100,13 +100,14 @@ authController.post("/verifyotp", async (req, res) => {
   if (user && user.otp == otp) {
     const userDetails = await UserModel.findOne({ email });
     if (userDetails)
-      res.send(
-        generateToken({
+      res.status(200).send({
+        msg: "Signed in successfully",
+        token: generateToken({
           email: userDetails.email,
           fullName: userDetails.fullName,
-          mobile: userDetails.mobile,
-        })
-      );
+          mobile: userDetails.mob,
+        }),
+      });
   } else res.status(401).send({ msg: "Please enter a valid 6 digit OTP." });
 });
 
